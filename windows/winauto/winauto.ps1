@@ -50,7 +50,7 @@ $WinAutoDir = "C:\winauto"
 $LogName = "Application"
 $LogSource = "winauto"
 $GithubUrl = "https://raw.githubusercontent.com/ptimme01/desktop/refs/heads/main/windows/winauto/"
-$ScheduledTaskName = "Run-WinAuto"
+$ScheduledTaskName = "WinAuto-Run"
 $DailyRunTime = "3am"
 
 # Derived variables
@@ -188,42 +188,29 @@ Function Install-WinAuto {
         $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File $WinAutoDir\invoke-winauto.ps1"
         $Triggers = @(
             (New-ScheduledTaskTrigger -Daily -At $DailyRunTime),
-            (New-LogEventTrigger -LogName $LogName -LogSource $LogSource -EventID 500)
+            (New-LogEventTrigger -LogName $LogName -LogSource $LogSource -EventID 150)
         )
         $Settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 6)
         $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-        Register-ScheduledTask -TaskName ScheduledTaskName -Action $Action -Trigger $Triggers -Settings $Settings -Principal $Principal 
+        Register-ScheduledTask -TaskName $ScheduledTaskName -Action $Action -Trigger $Triggers -Settings $Settings -Principal $Principal 
     }
 
     New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 105 -LogEntryType (Get-LogIdMetadata(105)).LogEntryType -LogMessage (Get-LogIdMetadata(105)).LogMessage
 
 }
 
-Function Invoke-WinAuto-Update-Trigger {
-    New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 500 -LogEntryType "Information" -LogMessage "WinAuto update trigger"
+Function Invoke-WinAuto-Run-Trigger {
+    New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 150 -LogEntryType (Get-LogIdMetadata(150)).LogEntryType -LogMessage (Get-LogIdMetadata(150)).LogMessage
+
 }
 
 Function Invoke-WinAuto {
-    ## Download and compare winauto.ps1 files (if different tell the stage-1 script to swap them at the end)
-   
-    $RawUrl = "$GithubUrl/winauto.ps1"
-    $OutputPath = "$WinAutoDir\winauto.ps1.new"
-    Get-WebFile -RawUrl $RawUrl -OutputPath $OutputPath
-    
-    if (!(Get-AreTwoFilesSame -File1 "$WinAutoDir\winauto.ps1" -File2 "$WinAutoDir\winauto.ps1.new")) {
-        shouldUpdate = $true
-    }
-    else {
-        Remove-Item -Path "$WinAutoDir\winauto.ps1.new" -Force
-    }
-
-
 
     ## Download stage-1 script (remove first to get any updates)
     if (test-path -Path "$WinAutoDir\winauto-stage1.ps1") { Remove-Item -Path "$WinAutoDir\winauto-stage1.ps1" }
     if (!(Test-Path -Path "$WinAutoDir\winauto-stage1.ps1")) {
-        $RawUrl = "$GithubUrl/$WinAutoFile"
-        $OutputPath = "$WinAutoDir\$WinAutoFile"
+        $RawUrl = "$GithubUrl/winauto-stage1.ps1"
+        $OutputPath = "$WinAutoDir\winauto-stage1.ps1"
         Get-WebFile -RawUrl $RawUrl -OutputPath $OutputPath
     }
 
@@ -231,21 +218,26 @@ Function Invoke-WinAuto {
     if (test-path -Path "$WinAutoDir\$env:COMPUTERNAME.ps1") { Remove-Item -Path "$WinAutoDir\$env:COMPUTERNAME.ps1" }
     try {
         if (!(Test-Path -Path "$WinAutoDir\$env:COMPUTERNAME.ps1")) {
-            $RawUrl = "$GithubUrl/$WinAutoFile"
-            $OutputPath = "$WinAutoDir\$WinAutoFile"
+            $RawUrl = "$GithubUrl/$env:COMPUTERNAME.ps1"
+            $OutputPath = "$WinAutoDir\$env:COMPUTERNAME.ps1"
             Get-WebFile -RawUrl $RawUrl -OutputPath $OutputPath
         }
     }
     catch {
         New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 120 -LogEntryType (Get-LogIdMetadata(120)).LogEntryType -LogMessage (Get-LogIdMetadata(120)).LogMessage
-    
-    
-    
-    
-    
     }
-    New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 110 -LogEntryType (Get-LogIdMetadata(110)).LogEntryType -LogMessage (Get-LogIdMetadata(110)).LogMessage
+  
+    ## Run scripts
+    ### Stage-1 script
+    . "$WinAutoDir\winauto-stage1.ps1"
 
+    ### Computer specific script
+    if (Test-Path -Path "$WinAutoDir\$env:COMPUTERNAME.ps1") {
+        . "$WinAutoDir\$env:COMPUTERNAME.ps1"
+    }
+
+    New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 110 -LogEntryType (Get-LogIdMetadata(110)).LogEntryType -LogMessage (Get-LogIdMetadata(110)).LogMessage
+    Update-WinAuto
 }
 Function Uninstall-WinAuto {
 
@@ -270,13 +262,15 @@ Function Get-LogIdMetadata {
     # TODO: validate LogEventID
     $LogIdTable = @{
         100 = @{ LogEntryType = "Information"; LogMessage = "General Informational message" }
-        105 = @{ LogEntryType = "Information"; LogMessage = "WinAuto install complete" }
-        106 = @{ LogEntryType = "Information"; LogMessage = "WinAuto uninstall complete" }
-        110 = @{ LogEntryType = "Information"; LogMessage = "WinAuto run complete" }
+        105 = @{ LogEntryType = "Information"; LogMessage = "Install complete" }
+        106 = @{ LogEntryType = "Information"; LogMessage = "Uninstall complete" }
+        107 = @{ LogEntryType = "Information"; LogMessage = "Update complete" }
+        110 = @{ LogEntryType = "Information"; LogMessage = "Run complete" }
         120 = @{ LogEntryType = "Information"; LogMessage = "No computer specific script found" }
+        150 = @{ LogEntryType = "Information"; LogMessage = "Run trigger activated" }
         200 = @{ LogEntryType = "Warning"; LogMessage = "General Warning message" }
         300 = @{ LogEntryType = "Error"; LogMessage = "General Error message" }
-        305 = @{ LogEntryType = "Error"; LogMessage = "WinAuto tried to run not as admin" }
+        305 = @{ LogEntryType = "Error"; LogMessage = "Tried to run not as admin" }
 
     }
     return $LogIdTable[$LogEventID]
@@ -296,20 +290,39 @@ Function Get-AreTwoFilesSame {
     return $hash1.Hash -eq $hash2.Hash
 }
 
-# Debug
-# if (-not (Test-Admin)) {
-New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 305 -LogEntryType (Get-LogIdMetadata(305)).LogEntryType -LogMessage (Get-LogIdMetadata(305)).LogMessage
+Function Update-WinAuto {
+    ## Update winauto.ps1 file if needed
+    ### Download and compare winauto.ps1 files (if different tell the stage-1 script to swap them at the end)
+    if (test-path -Path "$WinAutoDir\winauto.ps1.new") { Remove-Item -Path "$WinAutoDir\winauto.ps1.new" }
+    $RawUrl = "$GithubUrl/winauto.ps1"
+    $OutputPath = "$WinAutoDir\winauto.ps1.new"
+    Get-WebFile -RawUrl $RawUrl -OutputPath $OutputPath
+    
+    if (!(Get-AreTwoFilesSame -File1 "$WinAutoDir\winauto.ps1" -File2 "$WinAutoDir\winauto.ps1.new")) {
+        $shouldUpdate = $true
+    }
 
-#     Throw "This script must be run as an administrator."
-# }
+    if ($shouldUpdate) {
+        $UpdateCommand = { start-sleep -seconds 10 ; remove-item -Path "$using:WinAutoDir\winauto.ps1" -force ; rename-item -Path "$using:WinAutoDir\winauto.ps1.new" -NewName "$using:WinAutoDir\winauto.ps1" }
+        Start-Job -ScriptBlock $UpdateCommand 
+        New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 107 -LogEntryType (Get-LogIdMetadata(107)).LogEntryType -LogMessage (Get-LogIdMetadata(107)).LogMessage
+        exit 0
+    }
+
+}
+
+if (-not (Test-Admin)) {
+    New-EventLogEntry -LogName $LogName -LogSource $LogSource -LogEventID 305 -LogEntryType (Get-LogIdMetadata(305)).LogEntryType -LogMessage (Get-LogIdMetadata(305)).LogMessage
+
+    Throw "This script must be run as an administrator."
+}
 
 Function Main {
-#$Action = "Run" # Debug
     switch ($Action) {
         "Install" { Install-WinAuto }
         "Uninstall" { Uninstall-WinAuto }
         "Update" { Update-WinAuto }
-        "Trigger" { Invoke-WinAuto-Update-Trigger }
+        "Trigger" { Invoke-WinAuto-Run-Trigger }
         "Run" { Invoke-WinAuto }
         default { write-host "Parameter Required: Run Get-Help" }
     }
@@ -318,6 +331,5 @@ Function Main {
 
 if ($null -eq $MyInvocation.PSCommandPath) {
     Main
-
 }
 
