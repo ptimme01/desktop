@@ -229,7 +229,7 @@ Function Invoke-WinAuto {
   
     ## Run scripts
     ### Stage-1 script
-    . "$WinAutoDir\winauto-stage1.ps1"
+    . "$WinAutoDir\winauto-stage1.ps1" > "$WinAutoDir\winauto-stage1.log"
 
     ### Computer specific script
     if (Test-Path -Path "$WinAutoDir\$env:COMPUTERNAME.ps1") {
