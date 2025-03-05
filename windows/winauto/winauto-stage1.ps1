@@ -1,0 +1,1 @@
+. $PSScriptRoot\winauto.ps1
